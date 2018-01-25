@@ -120,10 +120,9 @@ static NEVER_INLINE s32 savedata_op(ppu_thread& ppu, u32 operation, u32 version,
 				if (entry.name.substr(0, prefix.size()) == prefix)
 				{
 					// Count the amount of matches and the amount of listed directories
-		 +			listGet->dirNum++; // total number of directories
- +					if (listGet->dirListNum < setBuf->dirListMax)
+					if (listGet->dirListNum++ < setBuf->dirListMax)
 					{
-						listGet->dirListNum++; // number of directories in list
+						listGet->dirNum++;
 
 						// PSF parameters
 						const auto& psf = psf::load_object(fs::file(base_dir + entry.name + "/PARAM.SFO"));
@@ -514,22 +513,9 @@ static NEVER_INLINE s32 savedata_op(ppu_thread& ppu, u32 operation, u32 version,
 			entry.name = vfs::unescape(entry.name);
 
 			// only files, system files ignored, fileNum is limited by setBuf->fileListMax
-			if (!entry.is_directory)
+			if (!entry.is_directory && entry.name != "PARAM.SFO" && statGet->fileListNum++ < setBuf->fileListMax)
 			{
-				if (entry.name == "PARAM.SFO" || entry.name == "PARAM.PFD")
-				{
-					size_system_kbytes += (entry.size + 1023) / 1024; // firmware rounds this value up
-					continue; // system files are not included in the file list
-				}
-
 				statGet->fileNum++;
-
-				if (statGet->fileListNum >= setBuf->fileListMax)
-					continue;
-
-				size_kbytes += (entry.size + 1023) / 1024; // firmware rounds this value up
-
-				statGet->fileListNum++;
 
 				auto& file = *file_list++;
 
@@ -558,12 +544,14 @@ static NEVER_INLINE s32 savedata_op(ppu_thread& ppu, u32 operation, u32 version,
 					file.fileType = CELL_SAVEDATA_FILETYPE_NORMALFILE;
 				}
 
+				file.size = entry.size;
+				file.atime = entry.atime;
+				file.mtime = entry.mtime;
+				file.ctime = entry.ctime;
+				strcpy_trunc(file.fileName, entry.name);
 			}
 		}
 
-		statGet->sysSizeKB = size_system_kbytes;
-		statGet->sizeKB = size_kbytes + size_system_kbytes;
-		
 		// Stat Callback
 		funcStat(ppu, result, statGet, statSet);
 
@@ -692,13 +680,6 @@ static NEVER_INLINE s32 savedata_op(ppu_thread& ppu, u32 operation, u32 version,
 		case CELL_SAVEDATA_FILETYPE_SECUREFILE:
 		case CELL_SAVEDATA_FILETYPE_NORMALFILE:
 		{
-			if (!fileSet->fileName)
-			{
-				// ****** sysutil savedata parameter error : 69 ******
-				cellSaveData.error("savedata_op(): fileSet->fileName is NULL");
-				return CELL_SAVEDATA_ERROR_PARAM;
-			}
-
 			file_path = fileSet->fileName.get_ptr();
 			break;
 		}
@@ -743,23 +724,8 @@ static NEVER_INLINE s32 savedata_op(ppu_thread& ppu, u32 operation, u32 version,
 			fs::file file(dir_path + file_path, fs::read);
 			if (!file)
 			{
-				// ****** sysutil savedata parameter error : 22 ******
 				cellSaveData.error("Failed to open file %s%s", dir_path, file_path);
-				return CELL_SAVEDATA_ERROR_PARAM;
-			}
-
-			if (fileSet->fileBufSize < fileSet->fileSize)
-			{
-				// ****** sysutil savedata parameter error : 72 ******
-				cellSaveData.error("savedata_op(): fileSet->fileBufSize < fileSet->fileSize");
-				return CELL_SAVEDATA_ERROR_PARAM;
-			}
-
-			if (!fileSet->fileBuf)
-			{
-				// ****** sysutil savedata parameter error : 73 ******
-				cellSaveData.error("savedata_op(): fileSet->fileBuf is NULL");
-				return CELL_SAVEDATA_ERROR_PARAM;
+				return CELL_SAVEDATA_ERROR_FAILURE;
 			}
 
 			file.seek(fileSet->fileOffset);
@@ -857,18 +823,6 @@ static NEVER_INLINE s32 savedata_get_list_item(vm::cptr<char> dirName, vm::ptr<C
 		dir->mtime = dir_info.mtime;
 	}
 
-	if (sizeKB)
-	{
-		u32 size_kbytes = 0;
-
-		for (const auto& entry : fs::dir(save_path))
-		{
-			size_kbytes += (entry.size + 1023) / 1024; // firmware rounds this value up
-		}
-
-		*sizeKB = size_kbytes;
-	}
-	
 	if (bind)
 	{
 		//TODO: Set bind in accordance to any problems
