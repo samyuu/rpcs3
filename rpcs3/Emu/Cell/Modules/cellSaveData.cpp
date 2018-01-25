@@ -509,9 +509,6 @@ static NEVER_INLINE s32 savedata_op(ppu_thread& ppu, u32 operation, u32 version,
 
 		auto file_list = statGet->fileList.get_ptr();
 
-		u32 size_kbytes = 0;
- +		u32 size_system_kbytes = 0;
-		
 		for (auto&& entry : fs::dir(dir_path))
 		{
 			entry.name = vfs::unescape(entry.name);
@@ -535,12 +532,6 @@ static NEVER_INLINE s32 savedata_op(ppu_thread& ppu, u32 operation, u32 version,
 				statGet->fileListNum++;
 
 				auto& file = *file_list++;
-
-				file.size = entry.size;
-				file.atime = entry.atime;
-				file.mtime = entry.mtime;
-				file.ctime = entry.ctime;
-				strcpy_trunc(file.fileName, entry.name);
 
 				if (entry.name == "ICON0.PNG")
 				{
